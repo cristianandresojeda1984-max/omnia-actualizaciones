@@ -1,0 +1,33 @@
+# Publica una versión de OmnIA: llega en una rama «entrega-vX.Y.Z» con los archivos partidos (GitHub no acepta archivos
+# de más de 100 MB en el repositorio), se vuelven a armar, se controlan con su sha256, se publican como release «vX.Y.Z»
+# (la última) y la rama se borra.
+name: Publicar versión
+on:
+  push:
+    branches: ["entrega-v*"]
+permissions:
+  contents: write
+jobs:
+  publicar:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Armar y controlar
+        run: |
+          set -euo pipefail
+          v="${GITHUB_REF_NAME#entrega-}"
+          mkdir salida
+          for f in $(cat entrega/archivos.txt); do cat entrega/"$f".parte-* > "salida/$f"; done
+          cp entrega/sha256.txt entrega/ultima.json salida/
+          cd salida && sha256sum -c sha256.txt
+          grep -q "\"version\": \"${v#v}\"" ultima.json
+          echo "V=$v" >> "$GITHUB_ENV"
+      - name: Release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh release delete "$V" --yes --cleanup-tag 2>/dev/null || true
+          gh release create "$V" salida/* --target main --latest --title "OmnIA ${V#v}" \
+            --notes "Instalador para Windows (OmnIA-instalador) y paquete de actualización de OmnIA ${V#v}. Las PC instaladas la encuentran solas en Configuración → Copias y sistema → Actualizaciones."
+      - name: Borrar la rama de entrega
+        run: git push origin --delete "$GITHUB_REF_NAME"
